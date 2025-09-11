@@ -1,9 +1,0 @@
-# Ignore local tooling and caches
-node_modules/
-.vercel/
-.vscode/
-.DS_Store
-*.log
-# Python caches
-__pycache__/
-*.pyc
