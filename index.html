@@ -36,9 +36,14 @@
           <div class="stat-label">Prestige Level</div>
           <div class="stat-value"><span id="prestigePoints">0</span> • <span id="prestigeMultiplier">x1.00</span></div>
         </div>
+        <div class="stat">
+          <div class="stat-label">Click Rate</div>
+          <div class="stat-value"><span id="clickRate">0.0</span>/s</div>
+        </div>
       </div>
       <div class="actions">
         <button id="settingsBtn" title="Settings and save options">⚙️ Settings</button>
+        <button id="autoClickBtn" title="Toggle auto-clicker" style="display: none;">🖱️ Auto</button>
         <button id="prestigeBtn" class="prestige-btn" title="Prestige to gain permanent multiplier" disabled>✨ Prestige (<span id="prestigeGain">0</span>)</button>
       </div>
     </header>
@@ -59,6 +64,14 @@
 
             <div class="click-power">
               <span>Per Click: <strong id="clickPower">+1</strong></span>
+            </div>
+
+            <!-- Add click combo counter -->
+            <div class="combo-counter" id="comboCounter" style="display: none;">
+              <span class="combo-text">Combo: <strong id="comboCount">0</strong></span>
+              <div class="combo-bar">
+                <div class="combo-fill" id="comboFill"></div>
+              </div>
             </div>
           </div>
         </div>

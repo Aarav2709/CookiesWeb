@@ -17,6 +17,11 @@ const TICK_MS = 100; // 10 ticks per second
 const COST_MULTIPLIER = 1.15; // exponential scaling
 const NOTIFICATION_DURATION_MS = 4000;
 
+// New features
+const COMBO_DECAY_TIME = 2000; // 2 seconds
+const MAX_COMBO = 50;
+const AUTO_CLICK_UNLOCK = 1000; // Unlock auto-clicker at 1000 total cookies
+
 // Upgrade catalog: id, name, baseCost, cps, unlockAt (cookies), description, icon
 const UPGRADE_CATALOG = [
   { id: "cursor", name: "Cursor", baseCost: 15, cps: 0.1, unlockAt: 0, desc: "Autoclicks the big cookie." },
@@ -101,21 +106,28 @@ const ACHIEVEMENTS = [
   { id: "collector", condition: s => Object.keys(s.cookieUpgrades).filter(k => s.cookieUpgrades[k]).length >= 15, text: "15 cookie upgrades purchased! Collector!" },
 ];
 
-const state = {
+// Game state (saved)
+let state = {
   cookies: 0,
-  totalCookies: 0, // lifetime counter
+  totalCookies: 0,
   totalClicks: 0,
-  upgrades: {}, // { id: owned }
-  cookieUpgrades: {}, // { id: true/false for purchased upgrades }
-  lastSave: 0,
-  lastTick: performance.now(),
-  prestigePoints: 0,
-  prestigeMultiplier: 1, // 1 + prestigePoints * 0.1 for example
-  achievements: {}, // id: true
-  startTime: Date.now(),
+  clickPower: 1,
+  cps: 0,
   level: 1,
   experience: 0,
   experienceToNext: 100,
+  prestigePoints: 0,
+  prestigeMultiplier: 1,
+  startTime: Date.now(),
+  buildings: {},
+  upgrades: {},
+
+  // New features
+  combo: 0,
+  lastClickTime: 0,
+  autoClickEnabled: false,
+  clicksThisSecond: 0,
+  clickRateHistory: []
 };
 
 const settings = {
@@ -425,21 +437,41 @@ function addCookies(amount) {
 }
 
 function onCookieClick(ev) {
-  const gain = getClickPower();
+  const now = Date.now();
+
+  // Update combo
+  if (now - state.lastClickTime < COMBO_DECAY_TIME) {
+    state.combo = Math.min(state.combo + 1, MAX_COMBO);
+  } else {
+    state.combo = 1;
+  }
+  state.lastClickTime = now;
+
+  // Calculate click power with combo bonus
+  const comboMultiplier = 1 + (state.combo - 1) * 0.1; // 10% per combo
+  const baseGain = getClickPower();
+  const gain = Math.floor(baseGain * comboMultiplier);
+
   addCookies(gain);
   state.totalClicks++;
+  state.clicksThisSecond++;
 
   // Gain experience for clicking (1 XP per click)
   gainExperience(1);
 
   renderStats();
   updateShopButtons();
+  updateComboDisplay();
+  checkAutoClickUnlock();
 
   // Effects
   playSound(800 + Math.random() * 200, 50);
   hapticFeedback('light');
 
-  // Remove floating animation - it looks weird
+  // Create floating text showing gain
+  if (ev && ev.clientX) {
+    createFloatingText(`+${formatNumber(gain)}`, ev.clientX, ev.clientY);
+  }
 }
 
 function buyUpgrade(id) {
@@ -778,6 +810,21 @@ function tick() {
   const now = performance.now();
   const dt = now - state.lastTick; // ms
   state.lastTick = now;
+
+  // Auto-clicking
+  if (state.autoClickEnabled && state.totalCookies >= AUTO_CLICK_UNLOCK) {
+    // Auto-click at 2 clicks per second
+    if (Math.random() < (dt / 1000) * 2) {
+      onCookieClick({ clientX: 0, clientY: 0 });
+    }
+  }
+
+  // Combo decay
+  if (now - state.lastClickTime > COMBO_DECAY_TIME) {
+    state.combo = 0;
+    updateComboDisplay();
+  }
+
   const cps = totalCps();
   const gain = (cps * dt) / 1000;
   if (gain > 0) {
@@ -821,6 +868,9 @@ function start() {
   // Settings modal
   $("#settingsBtn").addEventListener("click", () => showModal("#settingsModal"));
   $("#closeSettings").addEventListener("click", () => hideModal("#settingsModal"));
+
+  // Auto-click button
+  $("#autoClickBtn").addEventListener("click", toggleAutoClick);
 
   // Settings toggles
   $("#autosaveToggle").addEventListener("change", (e) => {
@@ -1042,3 +1092,91 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
+
+// Helper functions for new features
+function updateComboDisplay() {
+  const comboCounter = $("#comboCounter");
+  const comboCount = $("#comboCount");
+  const comboFill = $("#comboFill");
+
+  if (state.combo > 1) {
+    comboCounter.style.display = "block";
+    comboCount.textContent = state.combo;
+
+    const fillPercent = (state.combo / MAX_COMBO) * 100;
+    comboFill.style.width = `${fillPercent}%`;
+  } else {
+    comboCounter.style.display = "none";
+  }
+}
+
+function checkAutoClickUnlock() {
+  const autoBtn = $("#autoClickBtn");
+  if (state.totalCookies >= AUTO_CLICK_UNLOCK) {
+    autoBtn.style.display = "inline-block";
+  }
+}
+
+function toggleAutoClick() {
+  state.autoClickEnabled = !state.autoClickEnabled;
+  const autoBtn = $("#autoClickBtn");
+  autoBtn.textContent = state.autoClickEnabled ? "🖱️ ON" : "🖱️ Auto";
+  autoBtn.style.background = state.autoClickEnabled ?
+    "linear-gradient(135deg, #4caf50, #45a049)" :
+    "linear-gradient(to bottom, var(--button-hover), var(--button-bg))";
+}
+
+function updateClickRate() {
+  const now = Date.now();
+  state.clickRateHistory.push({ time: now, clicks: state.clicksThisSecond });
+
+  // Keep only last 10 seconds
+  state.clickRateHistory = state.clickRateHistory.filter(entry =>
+    now - entry.time < 10000
+  );
+
+  // Calculate average clicks per second
+  const totalClicks = state.clickRateHistory.reduce((sum, entry) => sum + entry.clicks, 0);
+  const timeSpan = Math.min(10, state.clickRateHistory.length);
+  const clickRate = timeSpan > 0 ? (totalClicks / timeSpan).toFixed(1) : "0.0";
+
+  $("#clickRate").textContent = clickRate;
+  state.clicksThisSecond = 0;
+}
+
+function createFloatingText(text, x, y) {
+  const floatLayer = $("#floatLayer");
+  const element = document.createElement('div');
+  element.textContent = text;
+  element.style.cssText = `
+    position: absolute;
+    left: ${x - 25}px;
+    top: ${y - 10}px;
+    color: #ffd700;
+    font-weight: bold;
+    font-size: 16px;
+    pointer-events: none;
+    z-index: 1000;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
+    animation: floatUp 1s ease-out forwards;
+  `;
+
+  // Add CSS animation if not exists
+  if (!document.getElementById('floatUpAnimation')) {
+    const style = document.createElement('style');
+    style.id = 'floatUpAnimation';
+    style.textContent = `
+      @keyframes floatUp {
+        0% { opacity: 1; transform: translateY(0px) scale(1); }
+        100% { opacity: 0; transform: translateY(-50px) scale(1.2); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  floatLayer.appendChild(element);
+  setTimeout(() => element.remove(), 1000);
+}
+
+// Start click rate tracking
+setInterval(updateClickRate, 1000);
