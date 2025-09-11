@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/x-icon" href="favicon.ico" />
+  <title>CookiesWeb</title>
+    <meta name="description" content="The classic Cookie Clicker incremental game" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./assets/css/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="stats">
+        <div class="stat big-stat">
+          <div class="stat-label">Cookies</div>
+          <div class="stat-value" id="cookieCount">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">per second</div>
+          <div class="stat-value" id="cps">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Level</div>
+          <div class="stat-value"><span id="level">1</span> • <span id="experience">0</span>/<span id="experienceToNext">100</span> XP</div>
+        </div>
+        <div class="stat prestige-stat">
+          <div class="stat-label">Prestige Level</div>
+          <div class="stat-value"><span id="prestigePoints">0</span> • <span id="prestigeMultiplier">x1.00</span></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="settingsBtn" title="Settings and save options">⚙️ Settings</button>
+        <button id="prestigeBtn" class="prestige-btn" title="Prestige to gain permanent multiplier" disabled>✨ Prestige (<span id="prestigeGain">0</span>)</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="play">
+        <div class="game-area">
+          <div class="bakery-name">
+            <h1 id="bakeryName">CookiesWeb</h1>
+            <div class="flavor-text" id="flavorText">Click the big cookie!</div>
+          </div>
+
+          <div class="cookie-section">
+            <div class="cookie-wrapper">
+              <button id="cookieBtn" class="cookie" aria-label="Click the big cookie" tabindex="0"></button>
+              <div id="floatLayer" aria-hidden="true"></div>
+            </div>
+
+            <div class="click-power">
+              <span>Per Click: <strong id="clickPower">+1</strong></span>
+            </div>
+          </div>
+        </div>
+      </section>      <aside class="shop">
+        <div class="shop-tabs">
+          <button class="tab-btn active" data-tab="buildings">Store</button>
+          <button class="tab-btn" data-tab="upgrades">Upgrades</button>
+        </div>
+
+        <div class="shop-content">
+          <div class="tab-content active" id="buildings-tab">
+            <div id="shopList" class="shop-list" role="list"></div>
+          </div>
+
+          <div class="tab-content" id="upgrades-tab">
+            <div id="upgradesList" class="upgrades-list" role="list">
+              <div class="coming-soon">More upgrades coming soon...</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Save/Load Modal -->
+    <div id="saveModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Save / Load Game</h3>
+          <button class="close-btn" onclick="closeSaveModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="settings-section">
+            <h4>Save Game</h4>
+            <div class="button-group">
+              <button onclick="saveToSlot(1)" class="control-btn">Save Slot 1</button>
+              <button onclick="saveToSlot(2)" class="control-btn">Save Slot 2</button>
+              <button onclick="saveToSlot(3)" class="control-btn">Save Slot 3</button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4>Load Game</h4>
+            <div class="button-group">
+              <button onclick="loadFromSlot(1)" class="control-btn">Load Slot 1</button>
+              <button onclick="loadFromSlot(2)" class="control-btn">Load Slot 2</button>
+              <button onclick="loadFromSlot(3)" class="control-btn">Load Slot 3</button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4>Export / Import</h4>
+            <div class="button-group">
+              <button onclick="exportSave()" class="control-btn">Export Save</button>
+              <button onclick="importSave()" class="control-btn">Import Save</button>
+            </div>
+            <textarea id="saveData" placeholder="Paste your save data here..." style="width: 100%; height: 60px; margin-top: 8px; background: var(--dark-bg); color: var(--text); border: 2px solid var(--panel-border); border-radius: 4px; padding: 8px; font-family: monospace; font-size: 11px; resize: vertical;"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal" aria-labelledby="settingsTitle" role="dialog" aria-hidden="true">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="settingsTitle">Settings & Save Management</h3>
+          <button id="closeSettings" class="close-btn" aria-label="Close settings">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="settings-section">
+            <h4>Game Settings</h4>
+            <label class="setting-item">
+              <input type="checkbox" id="autosaveToggle" checked>
+              <span>Autosave every 10 seconds</span>
+            </label>
+            <label class="setting-item">
+              <input type="checkbox" id="soundToggle" checked>
+              <span>Sound effects</span>
+            </label>
+            <label class="setting-item">
+              <input type="checkbox" id="hapticsToggle" checked>
+              <span>Mobile haptic feedback</span>
+            </label>
+          </div>
+
+          <div class="settings-section">
+            <h4>Save Management</h4>
+            <div class="button-row">
+              <button id="manualSave" class="modal-btn">💾 Save Now</button>
+              <button id="manualLoad" class="modal-btn">📁 Load Save</button>
+            </div>
+            <div class="button-row">
+              <button id="exportSave" class="modal-btn">📤 Export</button>
+              <button id="importSave" class="modal-btn">📥 Import</button>
+            </div>
+            <input type="file" id="importFile" accept=".txt,.json" style="display: none;">
+            <textarea id="exportText" placeholder="Export data will appear here..." readonly style="display: none;"></textarea>
+          </div>
+
+          <div class="settings-section">
+            <h4>Statistics</h4>
+            <div class="stats-grid">
+              <div class="stat-item">
+                <div class="stat-label">Total Cookies Baked</div>
+                <div class="stat-value" id="totalCookiesStat">0</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">Total Clicks</div>
+                <div class="stat-value" id="totalClicksStat">0</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">Buildings Owned</div>
+                <div class="stat-value" id="buildingsOwnedStat">0</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">Time Played</div>
+                <div class="stat-value" id="timePlayedStat">0s</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4>Danger Zone</h4>
+            <button id="hardReset" class="modal-btn warn">🗑️ Hard Reset (No Prestige)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="./assets/js/script.js"></script>
+  </body>
+  </html>
