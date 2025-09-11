@@ -1,38 +1,36 @@
-# CookiesWeb
+# CookiesOnWeb
 
-CookiesWeb is a classic incremental/clicker game for the web, inspired by Cookie Clicker. Made for Hackclub's CodeQuest YSWS Program!
+Vanilla HTML/CSS/JS incremental "Cookie Clicker"-style game.
 
-## Features
+Features
 
-- Click the big cookie to earn cookies
-- Buy buildings and upgrades to increase your cookies per second (CPS)
-- Prestige system for long-term progression
-- Save and load your progress (autosave every 10 seconds)
-- Modern, responsive UI with smooth animations
-- Statistics and achievements
+- Big cookie button with floating +1 effect
+- Stats: total cookies and cookies per second (CPS)
+- Multiple upgrades (10 tiers) with exponential costs
+- Progressive unlocks and achievement messages
+- LocalStorage save/load with autosave and offline progress
+- Optional prestige system with permanent multiplier
 
-## How to Play
+Run
+Open `index.html` in a browser. No build needed.
 
-1. Open `index.html` in your browser.
-2. Click the big cookie to earn cookies.
-3. Use your cookies to buy upgrades and buildings from the shop.
-4. Prestige for permanent multipliers and keep progressing!
+Deploy (Vercel CLI)
 
-## Project Structure
+1. Install CLI (once):
+   - npm i -g vercel
+2. Login and link:
+   - vercel login
+   - vercel
+3. Deploy (prod):
+   - vercel --prod
 
-- `index.html` – Main HTML file
-- `assets/js/script.js` – Game logic (vanilla JS)
-- `assets/css/style.css` – Styles
-- `assets/images/` – Game images (cookie, background, etc.)
+Notes: This is a static site. `vercel.json` uses the static builder and routes all paths to `index.html`.
 
-## Save & Load
+Notes
 
-The game autosaves every 10 seconds. You can also manually save, load, export, and import your progress from the settings menu.
+- Autosaves every 10s; use Save/Load buttons as needed.
+- Prestige becomes available as lifetime cookies reach new million thresholds.
+- Costs scale by 1.15^owned. CPS is multiplied by prestige multiplier.
 
-## License
-
+License
 MIT
-
----
-
-Made with ❤️ for Hackclub's CodeQuest YSWS Program.
