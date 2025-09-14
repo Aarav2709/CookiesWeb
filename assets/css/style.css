@@ -174,10 +174,28 @@ button.prestige-btn:hover {
     0 3px 8px rgba(106,90,205,0.5);
 }
 
-/* Remove focus outline/border for prestige button to avoid horizontal line artifact */
-button.prestige-btn:focus {
-  outline: none !important;
-  box-shadow: none !important;
+/* Accessible focus: only show a clear focus ring to keyboard users (focus-visible),
+   but avoid the odd horizontal artifact for mouse/active states. */
+button.prestige-btn:focus { outline: none; }
+button.prestige-btn:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 6px;
+  box-shadow: 0 0 0 6px rgba(147,112,219,0.08);
+}
+
+/* Small badge showing required prestige tier on locked upgrades */
+/* prestige badge removed */
+
+/* Tooltip fallback styling (native title will be used; this is available for custom tooltips later) */
+.tooltip {
+  position: absolute;
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 2000;
+  pointer-events: none;
 }
 
 /* Layout */

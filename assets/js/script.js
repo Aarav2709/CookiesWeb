@@ -18,8 +18,6 @@ const COST_MULTIPLIER = 1.15; // exponential scaling
 const NOTIFICATION_DURATION_MS = 4000;
 
 // New features
-const COMBO_DECAY_TIME = 2000; // 2 seconds
-const MAX_COMBO = 50;
 const AUTO_CLICK_UNLOCK = 1000; // Unlock auto-clicker at 1000 total cookies
 
 // Upgrade catalog: id, name, baseCost, cps, unlockAt (cookies), description, icon
@@ -121,10 +119,8 @@ let state = {
   startTime: Date.now(),
   buildings: {},
   upgrades: {},
-
   // New features
-  combo: 0,
-  lastClickTime: 0,
+  // combo system removed
   autoClickEnabled: false,
   clicksThisSecond: 0,
   clickRateHistory: []
@@ -332,10 +328,45 @@ function renderShop() {
 
     // tag with id so updates can find this item even if order changes
     item.dataset.id = u.id;
+    // make shop items keyboard accessible
+    item.setAttribute('tabindex', '0');
+    item.setAttribute('role', 'listitem');
+    item.setAttribute('aria-label', `${u.name}, cost ${format(scaledCost(u.baseCost, owned))} cookies`);
+    // Keyboard: Enter / Space to activate the Buy button
+    item.addEventListener('keydown', (e) => {
+      if (e.code === 'Enter' || e.code === 'Space') {
+        const btn = item.querySelector('button.buy');
+        if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
+      }
+    });
     item.append(icon, meta, actions);
     list.appendChild(item);
   }
 }
+
+// Throttle helper (runs fn at most every `ms` ms)
+function throttle(fn, ms) {
+  let last = 0;
+  let scheduled = null;
+  return function(...args) {
+    const now = Date.now();
+    const remaining = ms - (now - last);
+    if (remaining <= 0) {
+      if (scheduled) { clearTimeout(scheduled); scheduled = null; }
+      last = now;
+      fn.apply(this, args);
+    } else if (!scheduled) {
+      scheduled = setTimeout(() => {
+        last = Date.now();
+        scheduled = null;
+        fn.apply(this, args);
+      }, remaining);
+    }
+  };
+}
+
+// Create a throttled version of updateShopButtons to avoid running it every tick
+const throttledUpdateShopButtons = throttle(updateShopButtons, 100);
 
 function renderCookieUpgrades() {
   const list = $("#upgradesList");
@@ -346,8 +377,11 @@ function renderCookieUpgrades() {
   for (const upgrade of sorted) {
     const purchased = !!state.cookieUpgrades[upgrade.id];
 
-    const item = el("div", "shop-item" + (purchased ? " purchased" : ""));
-    item.dataset.id = upgrade.id;
+  const item = el("div", "shop-item" + (purchased ? " purchased" : ""));
+  item.dataset.id = upgrade.id;
+  item.setAttribute('tabindex', '0');
+  item.setAttribute('role', 'listitem');
+  item.setAttribute('aria-label', `${upgrade.name} - ${upgrade.desc}`);
 
     // Icon
     const icon = el("div", "icon", upgrade.icon);
@@ -356,8 +390,8 @@ function renderCookieUpgrades() {
     const meta = el("div", "meta");
     const name = el("div", "name", upgrade.name);
     // Inferred prestige level: 1 prestige per 1,000,000 lifetime cookies
-    const requiredPrestige = Math.floor((upgrade.unlockAt || 0) / 1_000_000);
-    const prestigeLabel = el("div", "prestige-req", `Prestige: ${requiredPrestige}`);
+  const requiredPrestige = Math.floor((upgrade.unlockAt || 0) / 1_000_000);
+  const prestigeLabel = el("div", "prestige-req", `Prestige: ${requiredPrestige}`);
     const desc = el("div", "desc", upgrade.desc);
     const costEl = el("div", "cost", purchased ? "PURCHASED" : `${format(upgrade.cost)} cookies`);
     meta.append(name, prestigeLabel, desc, costEl);
@@ -366,11 +400,18 @@ function renderCookieUpgrades() {
     const actions = el("div", "actions");
     if (!purchased) {
       const buy = el("button", "buy", "Buy");
+      buy.setAttribute('aria-label', `Buy ${upgrade.name} for ${format(upgrade.cost)} cookies`);
       const lacksPrestige = state.prestigePoints < requiredPrestige;
       buy.disabled = state.cookies < upgrade.cost || lacksPrestige;
-      if (lacksPrestige) buy.title = `Requires prestige ${requiredPrestige}`;
+      if (lacksPrestige) buy.title = `Requires prestige ${requiredPrestige} (1 point per 1,000,000 lifetime cookies)`;
+      else buy.title = `Buy ${upgrade.name}`;
       buy.addEventListener("click", () => buyCookieUpgrade(upgrade.id));
+      // Keyboard support: Enter or Space triggers buy
+      buy.addEventListener('keydown', (e) => {
+        if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); buy.click(); }
+      });
       actions.appendChild(buy);
+      // prestige badge removed (kept only the prestige label)
     } else {
       const ownedLabel = el("div", "owned", "✓ Owned");
       actions.appendChild(ownedLabel);
@@ -410,10 +451,10 @@ function updateShopButtons() {
   // Update enabling/disabling buy buttons based on current cookies
   // Update building shop items (UPGRADE_CATALOG) by data-id mapping
   document.querySelectorAll('#shopList .shop-item').forEach(item => {
-    const id = item.dataset.id || item.querySelector('.name')?.textContent && null;
+    const id = item.dataset.id;
     if (!id) return; // skip if we can't identify
     const u = UPGRADE_CATALOG.find(x => x.id === id);
-    if (!u) return;
+    if (!u) return; // unknown id
     const owned = state.upgrades[u.id] || 0;
     const cost = scaledCost(u.baseCost, owned);
     const unlocked = state.totalCookies >= u.unlockAt;
@@ -473,18 +514,9 @@ function addCookies(amount) {
 function onCookieClick(ev) {
   const now = Date.now();
 
-  // Update combo
-  if (now - state.lastClickTime < COMBO_DECAY_TIME) {
-    state.combo = Math.min(state.combo + 1, MAX_COMBO);
-  } else {
-    state.combo = 1;
-  }
-  state.lastClickTime = now;
-
-  // Calculate click power with combo bonus
-  const comboMultiplier = 1 + (state.combo - 1) * 0.1; // 10% per combo
+  // Calculate click power (combo system removed)
   const baseGain = getClickPower();
-  const gain = Math.floor(baseGain * comboMultiplier);
+  const gain = Math.floor(baseGain);
 
   addCookies(gain);
   state.totalClicks++;
@@ -494,8 +526,7 @@ function onCookieClick(ev) {
   gainExperience(1);
 
   renderStats();
-  updateShopButtons();
-  updateComboDisplay();
+  throttledUpdateShopButtons();
   checkAutoClickUnlock();
 
   // Effects
@@ -853,11 +884,7 @@ function tick() {
     }
   }
 
-  // Combo decay
-  if (now - state.lastClickTime > COMBO_DECAY_TIME) {
-    state.combo = 0;
-    updateComboDisplay();
-  }
+  // Combo system removed
 
   const cps = totalCps();
   const gain = (cps * dt) / 1000;
@@ -867,7 +894,7 @@ function tick() {
     gainExperience(gain * 0.1);
   }
   renderStats();
-  updateShopButtons();
+  throttledUpdateShopButtons();
   checkUnlocks();
   checkAchievements();
 }
@@ -1131,21 +1158,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // Helper functions for new features
-function updateComboDisplay() {
-  const comboCounter = $("#comboCounter");
-  const comboCount = $("#comboCount");
-  const comboFill = $("#comboFill");
-
-  if (state.combo > 1) {
-    comboCounter.style.display = "block";
-    comboCount.textContent = state.combo;
-
-    const fillPercent = (state.combo / MAX_COMBO) * 100;
-    comboFill.style.width = `${fillPercent}%`;
-  } else {
-    comboCounter.style.display = "none";
-  }
-}
+// combo display removed
 
 function checkAutoClickUnlock() {
   const autoBtn = $("#autoClickBtn");
