@@ -330,6 +330,8 @@ function renderShop() {
     buy.addEventListener("click", () => buyUpgrade(u.id));
     actions.appendChild(buy);
 
+    // tag with id so updates can find this item even if order changes
+    item.dataset.id = u.id;
     item.append(icon, meta, actions);
     list.appendChild(item);
   }
@@ -338,12 +340,14 @@ function renderShop() {
 function renderCookieUpgrades() {
   const list = $("#upgradesList");
   list.innerHTML = "";
+  // Sort cookie upgrades by cookies required (unlockAt) ascending
+  const sorted = COOKIE_UPGRADES.slice().sort((a, b) => (a.unlockAt || 0) - (b.unlockAt || 0));
 
-  for (const upgrade of COOKIE_UPGRADES) {
-    const purchased = state.cookieUpgrades[upgrade.id] || false;
-    const unlocked = true; // Make all upgrades available from start
+  for (const upgrade of sorted) {
+    const purchased = !!state.cookieUpgrades[upgrade.id];
 
-    const item = el("div", "shop-item" + (purchased ? " purchased" : unlocked ? "" : " locked"));
+    const item = el("div", "shop-item" + (purchased ? " purchased" : ""));
+    item.dataset.id = upgrade.id;
 
     // Icon
     const icon = el("div", "icon", upgrade.icon);
@@ -351,15 +355,20 @@ function renderCookieUpgrades() {
     // Meta info
     const meta = el("div", "meta");
     const name = el("div", "name", upgrade.name);
+    // Inferred prestige level: 1 prestige per 1,000,000 lifetime cookies
+    const requiredPrestige = Math.floor((upgrade.unlockAt || 0) / 1_000_000);
+    const prestigeLabel = el("div", "prestige-req", `Prestige: ${requiredPrestige}`);
     const desc = el("div", "desc", upgrade.desc);
     const costEl = el("div", "cost", purchased ? "PURCHASED" : `${format(upgrade.cost)} cookies`);
-    meta.append(name, desc, costEl);
+    meta.append(name, prestigeLabel, desc, costEl);
 
     // Actions
     const actions = el("div", "actions");
     if (!purchased) {
       const buy = el("button", "buy", "Buy");
-      buy.disabled = state.cookies < upgrade.cost;
+      const lacksPrestige = state.prestigePoints < requiredPrestige;
+      buy.disabled = state.cookies < upgrade.cost || lacksPrestige;
+      if (lacksPrestige) buy.title = `Requires prestige ${requiredPrestige}`;
       buy.addEventListener("click", () => buyCookieUpgrade(upgrade.id));
       actions.appendChild(buy);
     } else {
@@ -369,7 +378,8 @@ function renderCookieUpgrades() {
 
     item.append(icon, meta, actions);
     list.appendChild(item);
-  }  // If no upgrades to show, show coming soon message
+  }
+  // If no upgrades to show, show coming soon message
   if (list.children.length === 0) {
     const comingSoon = el("div", "coming-soon", "More upgrades will unlock as you progress...");
     list.appendChild(comingSoon);
@@ -398,9 +408,12 @@ function switchTab(tabName) {
 
 function updateShopButtons() {
   // Update enabling/disabling buy buttons based on current cookies
-  const items = document.querySelectorAll(".shop-item");
-  items.forEach((item, idx) => {
-    const u = UPGRADE_CATALOG[idx];
+  // Update building shop items (UPGRADE_CATALOG) by data-id mapping
+  document.querySelectorAll('#shopList .shop-item').forEach(item => {
+    const id = item.dataset.id || item.querySelector('.name')?.textContent && null;
+    if (!id) return; // skip if we can't identify
+    const u = UPGRADE_CATALOG.find(x => x.id === id);
+    if (!u) return;
     const owned = state.upgrades[u.id] || 0;
     const cost = scaledCost(u.baseCost, owned);
     const unlocked = state.totalCookies >= u.unlockAt;
@@ -417,6 +430,27 @@ function updateShopButtons() {
       const descs = meta.querySelectorAll(".desc");
       if (descs[1]) descs[1].textContent = `+${format(u.cps * getBuildingMultiplier(u.id) * currentMultiplier())} CPS each`;
     }
+  });
+
+  // Update cookie upgrades (the ones in the upgrades list). These are not indexed to UPGRADE_CATALOG.
+  document.querySelectorAll('#upgradesList .shop-item').forEach(item => {
+    const id = item.dataset.id;
+    if (!id) return;
+    const upgrade = COOKIE_UPGRADES.find(u => u.id === id);
+    if (!upgrade) return;
+    const purchased = state.cookieUpgrades[id] || false;
+    const costEl = item.querySelector('.cost');
+    if (costEl) costEl.textContent = purchased ? 'PURCHASED' : `${format(upgrade.cost)} cookies`;
+    const buyBtn = item.querySelector('button.buy');
+    if (buyBtn) {
+      const requiredPrestige = Math.floor((upgrade.unlockAt || 0) / 1_000_000);
+      const lacksPrestige = state.prestigePoints < requiredPrestige;
+      buyBtn.disabled = state.cookies < upgrade.cost || purchased || lacksPrestige;
+      if (lacksPrestige) buyBtn.title = `Requires prestige ${requiredPrestige}`;
+      else buyBtn.title = '';
+    }
+    const ownedLabel = item.querySelector('.owned');
+    if (ownedLabel) ownedLabel.textContent = purchased ? '✓ Owned' : '';
   });
 }
 
@@ -1061,6 +1095,9 @@ function loadFromString(saveString) {
     renderStats();
     renderShop();
     renderCookieUpgrades();
+    // remove focus from the prestige button to avoid focus outlines/horizontal line
+    const prestBtn = document.getElementById('prestigeBtn');
+    if (prestBtn && typeof prestBtn.blur === 'function') prestBtn.blur();
 
     return true;
   } catch (e) {
