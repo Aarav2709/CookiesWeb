@@ -23,9 +23,9 @@ const AUTO_CLICK_UNLOCK = 1000; // Unlock auto-clicker at 1000 total cookies
 // Upgrade catalog: id, name, baseCost, cps, unlockAt (cookies), description, icon
 const UPGRADE_CATALOG = [
   { id: "cursor", name: "Cursor", baseCost: 15, cps: 0.1, unlockAt: 0, desc: "Autoclicks the big cookie." },
-  { id: "grandma", name: "Grandma", baseCost: 100, cps: 1, unlockAt: 30, desc: "A nice grandma to bake more cookies." },
-  { id: "farm", name: "Cookie Farm", baseCost: 1100, cps: 8, unlockAt: 300, desc: "Grows cookie plants for maximum yield." },
-  { id: "mine", name: "Cookie Mine", baseCost: 12000, cps: 47, unlockAt: 2500, desc: "Mines the choicest cookie dough."},
+  { id: "grandma", name: "Grandma", baseCost: 80, cps: 1, unlockAt: 24, desc: "A nice grandma to bake more cookies." },
+  { id: "farm", name: "Cookie Farm", baseCost: 880, cps: 8, unlockAt: 240, desc: "Grows cookie plants for maximum yield." },
+  { id: "mine", name: "Cookie Mine", baseCost: 9600, cps: 47, unlockAt: 2000, desc: "Mines the choicest cookie dough."},
   { id: "factory", name: "Factory", baseCost: 130000, cps: 260, unlockAt: 25000, desc: "Automates cookie production." },
   { id: "bank", name: "Bank", baseCost: 1400000, cps: 1400, unlockAt: 200000, desc: "Generates cookies from interest." },
   { id: "temple", name: "Temple", baseCost: 20000000, cps: 7800, unlockAt: 1000000, desc: "Summons cookies from the beyond." },
@@ -39,11 +39,11 @@ const UPGRADE_CATALOG = [
 // Cookie upgrades catalog: id, name, cost, unlockAt, effect, description, icon
 const COOKIE_UPGRADES = [
   // Click upgrades
-  { id: "reinforced_index", name: "Reinforced Index Finger", cost: 100, unlockAt: 50, effect: { type: "click", multiplier: 2 }, desc: "The mouse and cursors are twice as efficient." },
-  { id: "carpal_tunnel", name: "Carpal Tunnel Prevention Cream", cost: 500, unlockAt: 250, effect: { type: "click", multiplier: 2 }, desc: "The mouse and cursors are twice as efficient." },
-  { id: "ambidextrous", name: "Ambidextrous", cost: 10000, unlockAt: 2500, effect: { type: "click", multiplier: 2 }, desc: "The mouse and cursors are twice as efficient." },
-  { id: "thousand_fingers", name: "Thousand Fingers", cost: 100000, unlockAt: 50000, effect: { type: "click", multiplier: 5 }, desc: "The mouse and cursors gain +0.1 cookies for each non-cursor object owned." },
-  { id: "million_fingers", name: "Million Fingers", cost: 10000000, unlockAt: 5000000, effect: { type: "click", multiplier: 10 }, desc: "Clicks are 10 times more powerful!" },
+  { id: "reinforced_index", name: "Reinforced Index Finger", cost: 80, unlockAt: 40, effect: { type: "click", multiplier: 2 }, desc: "The mouse and cursors are twice as efficient." },
+  { id: "carpal_tunnel", name: "Carpal Tunnel Prevention Cream", cost: 400, unlockAt: 200, effect: { type: "click", multiplier: 2 }, desc: "The mouse and cursors are twice as efficient." },
+  { id: "ambidextrous", name: "Ambidextrous", cost: 8000, unlockAt: 3000, effect: { type: "click", multiplier: 2 }, desc: "The mouse and cursors are twice as efficient." },
+  { id: "thousand_fingers", name: "Thousand Fingers", cost: 80000, unlockAt: 50000, effect: { type: "click", multiplier: 5 }, desc: "The mouse and cursors gain +0.1 cookies for each non-cursor object owned." },
+  { id: "million_fingers", name: "Million Fingers", cost: 8000000, unlockAt: 4000000, effect: { type: "click", multiplier: 10 }, desc: "Clicks are 10 times more powerful!" },
 
   // Grandma upgrades
   { id: "forwards_from_grandma", name: "Forwards from Grandma", cost: 1000, unlockAt: 500, effect: { type: "building", building: "grandma", multiplier: 2 }, desc: "Grandmas are twice as efficient." },
@@ -122,6 +122,7 @@ let state = {
   // New features
   // combo system removed
   autoClickEnabled: false,
+  autoBuyEnabled: false,
   clicksThisSecond: 0,
   clickRateHistory: []
 };
@@ -192,7 +193,9 @@ function getClickPower() {
       power *= upgrade.effect.multiplier;
     }
   }
-  return power * currentMultiplier();
+  // Add a small click power bonus per prestige point: 0.5% per point
+  const prestigeClickBonus = 1 + state.prestigePoints * 0.005;
+  return power * currentMultiplier() * prestigeClickBonus;
 }
 
 // Calculate building multiplier
@@ -506,6 +509,27 @@ function totalCps() {
   return cps * currentMultiplier();
 }
 
+// Auto-buy helper: prioritize cookie upgrades, then buildings; buy the cheapest affordable item
+function autoBuyAttempt() {
+  if (!state.autoBuyEnabled) return;
+  // 1) cookie upgrades
+  const affordableUpgrades = COOKIE_UPGRADES.filter(u => !state.cookieUpgrades[u.id] && state.cookies >= u.cost && state.prestigePoints >= Math.floor((u.unlockAt||0)/1_000_000));
+  if (affordableUpgrades.length > 0) {
+    affordableUpgrades.sort((a,b) => a.cost - b.cost);
+    buyCookieUpgrade(affordableUpgrades[0].id);
+    return;
+  }
+  // 2) buildings (choose cheapest next building across catalog)
+  const buildingOptions = UPGRADE_CATALOG.map(u => {
+    const owned = state.upgrades[u.id] || 0;
+    return { id: u.id, cost: scaledCost(u.baseCost, owned), unlockAt: u.unlockAt };
+  }).filter(b => state.totalCookies >= b.unlockAt && state.cookies >= b.cost);
+  if (buildingOptions.length > 0) {
+    buildingOptions.sort((a,b) => a.cost - b.cost);
+    buyUpgrade(buildingOptions[0].id);
+  }
+}
+
 function addCookies(amount) {
   state.cookies += amount;
   state.totalCookies += amount;
@@ -631,8 +655,22 @@ function nextPrestigePoints() {
 function recalcPrestigeMultiplier() {
   // 10% per point, diminishing after 50
   const p = state.prestigePoints;
-  const base = 1 + Math.min(p, 50) * 0.1 + Math.max(0, p - 50) * 0.05;
+  // 10% per point for first 50, then 7.5% per point after
+  const base = 1 + Math.min(p, 50) * 0.10 + Math.max(0, p - 50) * 0.075;
   state.prestigeMultiplier = base;
+
+  // Apply prestige ladder milestones if present
+  if (!state.prestigeMilestones) state.prestigeMilestones = {};
+  const milestones = [5,10,25,50];
+  for (const m of milestones) {
+    if (p >= m && !state.prestigeMilestones[m]) {
+      // Grant milestone reward: small global multiplier stacking
+      state.prestigeMilestones[m] = true;
+      // reward: permanent global multiplier, tracked via achievements or extra multiplier
+      // we'll emulate by adding a small permanent multiplier stored in state
+      state.prestigeBonus = (state.prestigeBonus || 0) + (m === 5 ? 0.05 : m === 10 ? 0.1 : m ===25 ? 0.25 : 0.5);
+    }
+  }
 }
 function updatePrestigeButton() {
   const btn = $("#prestigeBtn");
@@ -721,6 +759,8 @@ function save(silent = false) {
     cookieUpgrades: state.cookieUpgrades,
     lastSave: Date.now(),
     prestigePoints: state.prestigePoints,
+    prestigeMilestones: state.prestigeMilestones,
+    prestigeBonus: state.prestigeBonus,
     achievements: state.achievements,
     startTime: state.startTime,
   };
@@ -745,17 +785,12 @@ function load() {
     state.cookieUpgrades = Object.assign({}, data.cookieUpgrades || {});
     state.lastSave = Number(data.lastSave) || Date.now();
     state.prestigePoints = Number(data.prestigePoints) || 0;
+    state.prestigeMilestones = Object.assign({}, data.prestigeMilestones || {});
+    state.prestigeBonus = Number(data.prestigeBonus) || 0;
     state.achievements = Object.assign({}, data.achievements || {});
     state.startTime = Number(data.startTime) || Date.now();
     recalcPrestigeMultiplier();
-
-    // offline progress since last save (simple): add CPS * time
-    const offlineMs = Math.max(0, Date.now() - state.lastSave);
-    if (offlineMs > 2000) {
-      const gained = totalCps() * (offlineMs / 1000);
-      addCookies(gained);
-      // No notification for offline progress
-    }
+    // offline progress removed: do not award cookies while away
     // No notification for successful load
     return true;
   } catch (e) {
@@ -897,6 +932,13 @@ function tick() {
   throttledUpdateShopButtons();
   checkUnlocks();
   checkAchievements();
+
+  // auto-buy timer tick (call autoBuyAttempt every 1s)
+  window._autoBuyTimer = (window._autoBuyTimer || 0) + dt;
+  if (window._autoBuyTimer >= 1000) {
+    window._autoBuyTimer = 0;
+    autoBuyAttempt();
+  }
 }
 
 function start() {
@@ -932,6 +974,16 @@ function start() {
 
   // Auto-click button
   $("#autoClickBtn").addEventListener("click", toggleAutoClick);
+  // Auto-buy button
+  const autoBuyBtn = $("#autoBuyBtn");
+  if (autoBuyBtn) {
+    autoBuyBtn.addEventListener('click', () => {
+      state.autoBuyEnabled = !state.autoBuyEnabled;
+      autoBuyBtn.textContent = state.autoBuyEnabled ? '🤖 Auto-Buy ON' : '🤖 Auto-Buy';
+      autoBuyBtn.style.background = state.autoBuyEnabled ? 'linear-gradient(135deg, #4caf50, #45a049)' : '';
+      save(true);
+    });
+  }
 
   // Settings toggles
   $("#autosaveToggle").addEventListener("change", (e) => {
@@ -1003,6 +1055,10 @@ function start() {
   renderShop();
   renderCookieUpgrades();
   switchTab('buildings'); // Default tab
+
+  // Show auto-buy button once unlocked (e.g., after first 1k total cookies)
+  const autoBuyVisible = state.totalCookies >= 1000;
+  if (autoBuyBtn) autoBuyBtn.style.display = autoBuyVisible ? 'inline-block' : 'none';
 
   // Loop
   state.lastTick = performance.now();
